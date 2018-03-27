@@ -1,0 +1,195 @@
+---
+title: "GLM HW04"
+author: "宋倩 统计系 15420161152176"
+date: "2017/11/5"
+output: word_document
+---
+
+##1  
+The R function about the ridge regression algorithm：
+```{r}
+ridgeregression <- function(x,y,lam){
+  p <- 4
+  I <- diag(p)
+  temp <- t(x)%*%x+lam*I
+  if(det(temp)==0){
+    print("This matrix is singular")
+  }else
+    beta <- solve(temp)%*%t(x)%*%y
+  beta
+}
+```
+The cross-validation to choose different λ : 
+```{r}
+fold <- function(k,x){
+  remain <- x
+  test <- list()
+  for(i in 1:k){
+    a_i <- sample(1:nrow(remain),nrow(x)/k,replace = FALSE)
+    test[[i]] <- remain[a_i,]
+    remain <- remain[-a_i,]
+  }
+  test
+}
+
+```
+Use AIC as the criterion:
+```{r}
+CV <- function(lam){
+  AIC <- c()
+   for(i in 1:5){
+     x_i <- as.matrix(train[[i]][1:4])
+     y_i <- as.matrix(train[[i]][5])
+     beta_i <- ridgeregression(x_i,y_i,lam)
+     fit_i <- as.matrix(test[[i]][1:4])%*%beta_i
+     resid_i <- test[[i]][5] - fit_i
+     RSS_i <- sum(resid_i^2)
+     N <- nrow(test[[i]]) 
+     AIC[i] <- N*log(RSS_i/N)+2*(N-p)
+     }
+  mean(AIC)
+  }
+```
+###Model1  
+$$Y  = 2X1 +   6X2 + 3X3 − 0.6X4 + ε$$
+Generate the data:
+```{r}
+p=4
+library(mvtnorm)
+sigma <- matrix(nrow = p,ncol = p)
+for(i in 1:p){
+  for(j in 1:p){
+    sigma[i,j]=0.2^abs(i-j)
+  }
+}
+set.seed(123)
+X <- rmvnorm(n=100,sigma=sigma)
+epsi <- rnorm(n=100,0,1)
+c <- c(2,sqrt(6),3,-0.6)
+Y <- X%*%c+epsi
+data1 <- data.frame(X,Y)
+```
+Choose the best $\lambda$ by 5 fold cross-validation:
+```{r}
+test <- fold(5,data1) 
+train <- list()
+for(i in 1:5) train[[i]] <- do.call(rbind,test[-i])
+
+```
+
+```{r}
+CV(lam = 1e-7)
+CV(lam = 1e-4)
+CV(lam = 0.001)
+CV(lam = 0.01)
+```
+  From above results,the average AIC can't decrease any more when $\lambda<0.001$. So we choose the best $\lambda=0.001$.
+```{r}
+X <- as.matrix(data1[1:4])
+Y <- as.matrix(data1[5])
+ridgeregression(X,Y,lam = 0.001)
+```
+So,we get the estimated coefficients $$\widehat{\beta}=(1.966,2.470,3.066,-0.627)'$$
+###Model2  
+$$Y = 1.5X1 + 2X2* − 0.7X3 + 0.9X4 + ε$$
+Generate the data:
+```{r}
+set.seed(123)
+sigma <- matrix(0.2,4,4)
+for(i in 1:p) sigma[i,i]=1
+X <- rmvnorm(n=100,sigma=sigma)
+epsi <- rnorm(100,0,1)
+c <- c(1.5,2,-0.7,0.9)
+Y <- X%*%c+epsi
+data2 <- data.frame(X,Y)
+```
+Choose the best $\lambda$ by 5 fold cross-validation:
+```{r}
+test <- fold(5,data2) 
+train <- list()
+for(i in 1:5) train[[i]] <- do.call(rbind,test[-i])
+```
+
+```{r}
+CV(lam =0.5)
+CV(lam = 1)
+CV(lam = 2)
+
+```
+  From above results,we guess the best $\lambda$is betwwen 0.5 and 2.We can get it by following method:
+```{r}
+aic <- CV(lam=0.5)
+i=0.500
+while(i < 2.000){
+  if(CV(lam = i)<aic){
+    aic <- CV(lam = i)
+    lambda <- i
+  }
+  i=i+0.001
+}
+lambda
+aic
+```
+So the best $\lambda$ is 1.236. Then we can do the ridge regression with this parameter.
+```{r}
+X <- as.matrix(data2[1:4])
+Y <- as.matrix(data2[5])
+ridgeregression(X,Y,lam = 1.236)
+```
+So,we get the estimated coefficients $$\widehat{\beta}=(1.444,1.990,-0.614,0.868)'$$
+Then we replace X2 by $X2* = 0.75X3 + 0.5X4 + ξ $.
+```{r}
+set.seed(1234)
+ksi <- rnorm(100,0,1)
+X[,2] <- 0.75*X[,3]+0.5*X[,4]+ksi
+Y <- X%*%c+epsi
+data2 <- data.frame(X,Y)
+test <- fold(5,data2) 
+train <- list()
+for(i in 1:5) train[[i]] <- do.call(rbind,test[-i])
+```
+
+```{r}
+CV(lam =1e-7)
+CV(lam = 1e-5)
+CV(lam = 1e-4)
+```
+From above results,the average AIC can't decrease any more when $\lambda<10^{-5}$. So we choose the best $\lambda=10^{-5}$.
+```{r}
+X <- as.matrix(data2[1:4])
+Y <- as.matrix(data2[5])
+ridgeregression(X,Y,lam = 1e-5)
+```
+So,we get the estimated coefficients $$\widehat{\beta}=(1.460,1.970,-0.602,0.888)'$$
+
+##2.  
+Generate a data set X with (n,p) = (100,1000),and find the maximum absolute sample correlation.
+```{r}
+set.seed(1234)
+X <- matrix(rnorm(100*1000,0,1),nrow=100)
+colx <- c()
+for(i in 1:1000)colx[i] <- paste('X',i,sep = '')
+colnames(X) <- colx
+corrX <- abs(cor(X))
+corrX[corrX==1] <- NA
+a <- max(corrX,na.rm = TRUE)
+a
+which(corrX==a,arr.ind=T)
+
+```
+The correlation between X822 and X534 is the biggest,which equals 0.484. 
+Generate a data set Y with (n,p) = (100,1000),and find the maximum absolute sample correlation.
+```{r}
+Y <- matrix(rnorm(100*5000,0,1),nrow=100)
+coly <- c()
+for(i in 1:5000)coly[i] <- paste('Y',i,sep = '')
+colnames(Y) <- coly
+corrY <- abs(cor(Y))
+corrY[corrY==1] <- NA
+max(corrY,na.rm = TRUE)
+b <- max(corrY,na.rm = TRUE)
+which(corrY==b,arr.ind=T)
+
+```
+The correlation between Y1525 and Y4209 is the biggest,which equals 0.510. 
+So there is spurious correlation in high dimensional data.

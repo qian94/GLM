@@ -1,0 +1,93 @@
+---
+title: "GLS HW3"
+author: "宋倩 统计系 15420161152176"
+date: "2017/10/14"
+output:
+  word_document: default
+  html_document: default
+---
+###4.1  
+(a)
+```{r}
+y <- c(1,6,16,23,27,39,31,30,43,51,63,70,
+       88,97,91,104,110,113,149,159)
+i <- 1:20
+plot(i,y)
+```
+(b)
+```{r}
+plot(log(i),log(y))
+```
+The plot of log(y) against log(i) is approximately linear with a non-zero intercept.
+  
+  (c)
+Since $g(\lambda_i)=log(\lambda_i)=\beta_1+\beta_2x_i=\eta_i$,  
+then   
+$\frac{\partial \lambda_i}{\partial \eta_i}=e^{\eta_i}$,  
+$w_{ii}=\frac{1}{var(Y_i)}\lambda_i^2=\lambda_i=e^{{x_i}^T\beta}$  
+and from (4.24) we can get  
+$z_i=x_i^T\beta+\frac{y_i}{\lambda_i}-1$  
+```{r}
+n=length(y)
+b0 <- c(1,1)
+loglike<-function(x,y,b0){
+     X=cbind(rep(1,n),x)   
+     mu=exp(X%*%b0)
+	 ll=sum(y*log(mu)-mu)         
+	 return(ll)
+}
+diff <- 1                       
+iter <- 0                        
+epsi <- 1e-10                     
+maxit=1000
+while(diff>epsi & iter<maxit)  {
+	     ll.old <- loglike(log(i),y,b0)
+		 X=cbind(rep(1,n),log(i))
+		 mu=exp(X%*%b0)
+		 W=diag(as.vector(mu)) 
+		 Z=as.vector((y-mu)/mu+log(mu))                                   
+		 b1=as.vector(solve(t(X)%*%W%*%X,t(X)%*%W%*%Z))
+		 print(b1)
+		 ll.new <- loglike(log(i),y,b1)
+		 diff <- abs((ll.new-ll.old)/ll.old)
+		 iter <- iter+1
+		 b0 <- b1
+ }
+if (iter==maxit) {cat("Warning! May Not Convergence", "\n")}
+cat("Number of iterations=",iter,"\n")
+
+X=cbind(rep(1,n),log(i))                   # design matrix
+W=diag(as.vector(mu))             # diagonal weight matrix
+I=t(X)%*%W%*%X                         # information matrix
+myglm=glm(y~log(i),family=poisson)
+summary(myglm)
+
+```
+(d)The passion regression model is $$y=0.996+1.326log(i)$$  
+The parameters are the same as the results of NR.
+
+###4.2  
+(a)
+```{r}
+y <- c(65,156,100,134,16,108,121,4,39,143,56,26,22,1,1,5,65)
+x <- c(3.36,2.88,3.63,3.41,3.78,4.02,4.00,4.23,3.73,3.85,3.97,4.51,4.54,5.00,5.00,4.72,5.00)
+plot(x,y)
+```
+y decreases,approximately exponentially,as x increases.  
+(b)$g(\mu_i)=log(\mu_i)=\beta_1+\beta_2x_i$  
+(c)Since the probability distribution is a special case of Gamma 
+$$f(y,\alpha,\beta)=\frac{\beta^\alpha}{\Gamma(\alpha)}y^{\alpha-1}e^{-\beta y}$$
+where $\alpha=1,\beta=\theta$,so $$E(Y)=\frac{\alpha}{\beta}=\frac{1}{\theta}$$
+$$var(Y)=\frac{\alpha}{\beta^2}=\frac{1}{\theta^2}$$
+(d)
+```{r}
+myglm=glm(y~x,family=Gamma(link = "log"))
+summary(myglm)
+```
+Fitted model is$log(y)=8.4775-1.1093x$  
+(e)
+```{r}
+r <- (y-fitted(myglm))/fitted(myglm)
+r
+```
+The model fits the data well. The standardized residuals are small,except for the last observation which has r=2.467.

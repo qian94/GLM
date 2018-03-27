@@ -1,0 +1,461 @@
+---
+title: "FinalGLM"
+author: "宋倩 统计系 15420161152176"
+date: "2017/12/20"
+output:
+  word_document: default
+  html_document: default
+---
+
+# 引言
+
+信息技术和信息产业是知识经济的显著标志，它所提供的信息处理、信息交换、信息储存等服务能够使一个企业的内部管理、生产组织、库存销售安排等更为经济合理，大大降低运营成本。现代社会正以不可想象的速度产生海量数据，伴随着大数据理念在我国的兴起，信息产业已经开始融合到各行各业，帮助各部门以更低的成本提供给消费者更快、更好、更多选择的服务。“十三五”期间，国家发展和改革委员会将信息经济划为了重大研究领域和方向，信息产业已经成为了我国经济发展的关键力量。尽管我国面对信息化潮流做出了积极反应，但仍存在整体发展水平较低，地区发展不协调，信息资源开发不足等问题，不利于全面推进信息化进程。如果能对各地区的信息产业现状进行全面细致的评估，剖析各地区内在产业结构的优劣，势必能为各地区的信息化建设提出针对性的改进意见，使信息产业为本地区带来更大的经济效益。本文以我国31个省的2012年42部门投入产出表为依据，剖析了信息产业发展的区域差异，并探究了影响信息产业经济效益的关键因素，为各地区更好地发展信息产业提出了有针对性的建议。
+
+# 信息部门产业结构分析
+
+信息产业包括信息制造业和信息服务业，在投入产出表中体现为“通信设备、计算机和其他电子设备”、“信息传输、软件和技术服务”两个部门。本章系统地研究了各地区信息产业的产业关联度、最终需求结构、经济效益和产业协调性，对比了不同地区的差异。这些技术经济指标是决定信息产业效益的关键因素，也是后续建模分析的重要变量。
+
+##产业关联分析
+
+产业关联是指通过各部门间的投入-产出数量关系而结成的某种形式和程度的联系，一般认为，一个部门与其他各部门的关联程度越高，其对国民经济的影响就越大。产业关联效应包括前向关联效应和后向关联效应，本文选择后向关联效应来反映信息产业为生产相应规模的最终产品对经济体系中所有产业产生的完全需求之和，即需求拉动的影响力。
+
+考虑包含n个产业的经济体，设$X,q,y,f$分别表示中间流量矩阵、总产出向量、增加值向量和最终产品向量，$\hat{q}=diag(q)$表示由总产出向量构成的对角阵，$I$为单位矩阵，$i$为单位列向量，则直接消耗系数（投入系数）矩阵为$A=X\hat{q}$。
+
+根据投入产出表的行向平衡关系，有：
+$$Xi+f=q$$
+
+将$X=A\hat{q}$代入上式，进一步整理有：
+$$q=(I-A)^{-1}f$$
+
+其中，$(I-A)^{-1}$是完全需求系数矩阵(Leontief逆矩阵)，记为$L$。
+
+则后向完全关联的加权测度形式为：
+$$WBL=\frac{\hat{f}L^{T}i}{\frac{1}{n}i^{T}q},WBL_j=\frac{\sum_{i=1}^{n}l_{ij}f_j}{\frac{1}{n}\sum_{k=1}^{n}q_k}$$
+
+据此可以得到各地区信息制造业和信息服务业的关联度系数如下表：
+```{r,echo=FALSE}
+#导入数据-----------
+load("~/LearningR/data1.Rdata")
+library(ggplot2)
+library(reshape)
+library(maptools)
+library(mapproj)
+library(plyr)
+library(cluster)
+library(ncvreg)
+library(gridExtra)
+#计算相关指标
+X <- list();q <- list();A <- list();B <- list();L <- list();f <- list();U <- list();y <- list()
+I <- diag(1,nrow = 42);i <- rep(1,42)
+options(warn = -1)
+for(j in 1:31){
+  data1[[j]]$总出口 <- as.numeric(as.character(data1[[j]]$NA..53))+as.numeric(as.character(data1[[j]]$NA..54))
+  data1[[j]]$最终产品 <-as.numeric(as.character(data1[[j]]$NA..59))-as.numeric(as.character(data1[[j]]$NA..44))
+  X[[j]] <- matrix(as.numeric(as.matrix(data1[[j]][9:50,4:45])),nrow = 42)  #中间流量矩阵
+  q[[j]] <- as.numeric(as.matrix(data1[[j]][57,4:45]))+1e-7                 #总产出向量
+ ###总产出有0值，为可逆，加1e-5
+  A[[j]] <- X[[j]]%*%solve(diag(q[[j]]))                    #直接消耗系数矩阵
+  B[[j]] <- solve(I-A[[j]])-I                              #完全消耗系数矩阵
+  L[[j]] <- B[[j]]+I                                       #Leontief逆矩阵/完全需求系数
+  f[[j]] <- data1[[j]][9:50,63]                               #最终产品向量 
+  U[[j]] <- matrix(as.numeric(as.matrix(data1[[j]][9:50,c(51,54,62)])),nrow =42) #
+  y[[j]] <- as.numeric(as.matrix(data1[[j]][56,4:45]))
+}
+
+#加权完全关联----------
+WBL <- list()
+for(j in 1:31){
+  WBL[[j]] <- (diag(f[[j]])%*%t(L[[j]])%*%i)/as.numeric(t(i)%*%q[[j]]/42)   #后向关联
+  }
+
+#信息产业关联度汇总
+GLD_zz <- c();GLD_fw <- c()
+for(j in 1:31){
+  GLD_zz[j] <- WBL[[j]][20,]
+  GLD_fw[j] <- WBL[[j]][32,]
+}
+options(digits = 3)
+NAME <- c("北京市","天津市","河北省","山西省","内蒙古自治区","辽宁省","吉林省","黑龙江省",
+  "上海市","江苏省","浙江省","安徽省","福建省","江西省","山东省","河南省","湖北省",
+  "湖南省","广东省","广西壮族自治区","海南省","重庆市","四川省","贵州省","云南省","西藏自治区","陕西省","甘肃省","青海省","宁夏回族自治区","新疆维吾尔自治区")
+GLDdt <- data.frame(NAME,GLD_zz,GLD_fw,(GLD_zz+GLD_fw)/2,abs(GLD_zz-GLD_fw))
+names(GLDdt) <- c("NAME","信息制造业","信息服务业","均值","极差")
+write.csv(GLDdt,file="~/LearningR/Data/GLDdt.csv",row.names = F)
+#library(xtable)
+#print(xtable(GLDdt,caption = "各省份信息产业关联度"),caption.placement = "top",include.rownames = TRUE)
+
+```
+
+```{r,echo=FALSE}
+#箱线图
+dt1 <- melt(GLDdt[1:3],id="NAME")
+dt1$variable <- as.factor(dt1$variable)
+ggplot(dt1,aes(x=variable,y=value))+
+  geom_boxplot()+
+  labs(title="信息产业关联度分布",x="信息部门",y="关联度系数")+
+  theme(plot.title = element_text(hjust = 0.5),text = element_text(family="STKaiti"))
+
+```
+
+
+```{r,echo=FALSE}
+#关联度热图
+##############加载程序包，读取地图数据##############
+china_map <-  rgdal::readOGR("/Users/songqian/LearningR/Data/heatmap/bou2_4p.shp",encoding = "gb2312")
+
+###################数据预处理#######################
+x <- china_map@data          #读取行政信息
+xs <- data.frame(x,id=seq(0:924)-1)          #含岛屿共925个形状
+china_map1 <- fortify(china_map)           #转化为数据框
+china_map_data <- join(china_map1, xs, type = "full")       #合并两个数据框
+
+##读取指标数据，csv格式
+mydata <- read.csv("~/LearningR/Data/GLDdt.csv",header = T)
+china_data <- join(china_map_data, mydata, type="full")          #合并两个数据框
+
+####################绘制地图，并清除背景色、坐标轴、经纬线,图例放左下角##########
+province_city <- read.csv("~/LearningR/Data/heatmap/chinaprovincecity.csv",fileEncoding = "gb2312")  #读取省会城市坐标
+china_data <- join(china_data, province_city, type="full")          #合并两个数据框
+
+##用数据填充，GDP量越大颜色越深
+pp1 <- ggplot(china_data,aes(long,lat))+
+  labs(title="信息制造部门关联度")+
+  geom_polygon(aes(group=group,fill=信息制造业 ),colour="grey60")+
+  scale_fill_gradient(name="",low="white",high="red") +
+  coord_map("polyconic") +
+  coord_map(projection = "azequidistant")+
+  geom_text(aes(x = jd,y = wd,label = province), data =province_city,family="STKaiti",size=3)+
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = c(0.2,0.3),
+    plot.title = element_text(hjust = 0.5),
+    text=element_text(family="STKaiti")
+  )
+pp1
+
+pp2 <- ggplot(china_data,aes(long,lat))+
+  labs(title="信息服务部门关联度")+
+  geom_polygon(aes(group=group,fill=信息服务业 ),colour="grey60")+
+  scale_fill_gradient(name="",low="white",high="red") +
+  coord_map("polyconic") +
+  coord_map(projection = "azequidistant")+
+  geom_text(aes(x = jd,y = wd,label = province), data =province_city,family="STKaiti",size=3)+
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = c(0.2,0.3),
+    plot.title = element_text(hjust = 0.5),
+    text=element_text(family="STKaiti")
+  )
+pp2
+
+```
+
+## 最终需求结构分析
+最终需求是经济增长的动力和制约。最终需求包括消费、投资、出口等，能够引发中间需求变动，决定着全部经济活动的价值，也决定了某一产业是否有存在的必要。
+
+当第$k$类型的最终需求发生变动时，由部门间的相互关联所引起的第$i$部门生产额的增加额，记为生产诱发额$\chi_i^k$，即$$\chi_i^k=\sum_{j=1}^nl_{ij}f_{ij}$$
+
+其中，$f_{ij}$是第j部门产品用于第$k$类型最终需求的量。
+
+利用生产诱发额可分析某一产业各类型最终需求生产诱发度，即生产诱发额与相应的最终需求额合计只比，它能够表示第$k$类最终需求按结构变动一单位所诱发的第$i$部门生产的变化，计算公式为：$$\mu_{ik}=\frac{\sum_{j=1}^{n}l_{ij}f_{ij}}{\sum_{j=1}^{n}f_{jk}}$$
+
+某一产业第$k$类生产诱发额与该产业所有类型的最终需求生产诱发额的合计之比可以表示该产业对最终需求的生产依存度，从而可以了解该产业是属于“消费依赖型”还是“投资依赖型”或“出口依赖型”。
+
+```{r,echo=FALSE}
+#最终需求结构-------------------
+X1 <- list();U1 <- list();MU <- list();W <- list();X2 <- list()
+for(j in 1:31){
+  U1[[j]] <- solve(diag(apply(U[[j]],2,sum)))
+  X1[[j]] <- L[[j]]%*%U[[j]]         #生产诱发额
+  MU[[j]] <- X1[[j]]%*%U1[[j]]        #生产诱发度
+  X2[[j]] <- solve(diag(apply(X1[[j]],1,sum)))
+  W[[j]] <- t(X2[[j]])%*%(X1[[j]])   #生产依存度
+}
+YFD <- list()
+for(j in 1:31){
+  YFD[[j]] <- (MU[[j]][20,]+MU[[j]][32,])/2
+}
+YFD <- do.call(rbind,YFD)
+YFDdt <- data.frame(NAME,YFD)
+names(YFDdt) <- c("NAME","消费诱发度","投资诱发度","出口诱发度")
+```
+
+```{r,echo=FALSE}
+YFDdt1 <- melt(YFDdt,id=c("NAME"))
+YFDdt1$NAME <- c("北京","天津","河北","山西","内蒙古","辽宁","吉林","黑龙江",
+                   "上海","江苏","浙江","安徽","福建","江西","山东","河南","湖北",
+                   "湖南","广东","广西","海南","重庆","四川","贵州","云南","西藏",
+                   "陕西","甘肃","青海","宁夏","新疆")
+ggplot(YFDdt1,aes(x=NAME,y=value,fill=variable))+
+  geom_bar(stat="identity",position = "stack")+
+  labs(title="最终需求诱发度")+
+  theme(plot.title=element_text(hjust=0.5),
+        axis.text.x = element_text(vjust = 0.5, hjust = 0.5, angle = 90),
+        panel.grid =element_blank(),
+        text = element_text(family="STKaiti"))
+```
+
+
+## 产业结构协调性分析
+基于学者施启发有关产业结构的基本思想，产出结构与直接消耗系数矩阵的正的右特征向量一致时，产业结构处于最佳理想状态。记生产结构向量$x$与主特征向量$R_1$的夹角为$\alpha$，生产结构向量$x$所在的（不）协调区域角度为$\beta$，则我们可以通过下式测算生产结构和技术结构的协调程度或不协调程度：$$\eta=\frac{\alpha}{\beta}\times100\%$$
+
+其中，$$\alpha=arccos(\frac{\sum_{i=1}^{n}x_iR_{i1}}{\sqrt{\sum_{i=1}^nx_i^2\sum_{i=1}^{n}R_{i1}^2}})$$
+$$\beta=arccos(\frac{\sum_{i=1}^{n}a_iR_{i1}}{\sqrt{\sum_{i=1}^na_i^2\sum_{i=1}^{n}R_{i1}^2}})$$
+
+我们从投入产出表的行平衡关系出发，求得直接消耗系数矩阵的最大特征值和正的右特征向量，分析各地区信息产业与非信息产业的协调度和信息制造业与信息服务业的协调度。
+###外部协调性
+首先，我们将信息制造业和信息服务业合并为一个部门，将其余40个部门合并为一个部门，研究信息产业的外部协调性。
+```{r,echo=FALSE}
+##信息产业-非信息产业
+x_x <- list();x_f <- list();f_x <- list();f_f <- list();
+xin1 <- list();A1 <- list();q1 <- list();q1_1 <- list();eigen1 <- list();
+s1 <- c();lam1 <- c();vec1 <- list();uu1 <- list()
+mod <- function(z){                         ##向量求模函数
+  a <- vector(mode="numeric",length = length(z))
+  for(i in seq_along(z)) a[i] <- z[i]^2
+  sqrt(sum(a))
+}
+
+for(j in 1:31){
+  x_x[[j]] <- sum(X[[j]][c(20,32),c(20,32)])
+  x_f[[j]] <- sum(X[[j]][c(20,32),-c(20,32)])
+  f_x[[j]] <- sum(X[[j]][-c(20,32),c(20,32)])
+  f_f[[j]] <- sum(X[[j]][-c(20,32),-c(20,32)])
+  xin1[[j]] <- matrix(c(x_x[[j]],x_f[[j]],f_x[[j]],f_f[[j]]),nrow = 2,byrow = TRUE)#信息-非信息产业中间流量矩阵
+  q1[[j]] <- c(sum(q[[j]][c(20,32)]),sum(q[[j]][-c(20,32)]))  #信息-非信息产业产出向量
+  q1_1[[j]] <- q1[[j]]/sum(q1[[j]])                           #生产结构
+  A1[[j]] <- xin1[[j]]%*%solve(diag(q1[[j]]))                   #信息-非信息直接消耗系数矩阵
+  eigen1[[j]] <- eigen(A1[[j]])
+  uu1[[j]] <- t(solve(eigen1[[j]]$vectors))%*%(1-eigen1[[j]]$values)
+  lam1[j] <- eigen1[[j]]$values[1] 
+  vec1[[j]] <- eigen1[[j]]$vectors[,1]
+  s1[j] <- sum(f[[j]])/sum(q[[j]])      #最终产品率
+  
+}
+a1 <- list();alpha1 <- c();beta1 <- c();eta1 <- c()
+for(j in 1:31)a1[[j]] <- c(0,0)
+for(j in 1:31){
+  ifelse(s1[j] >= 1-lam1[j],a1[[j]][which.max(uu1[[j]])] <- 1,a1[[j]][which.min(uu1[[j]])] <- 1) 
+  alpha1[j] <- acos((t(q1_1[[j]])%*%vec1[[j]])/(mod(q1_1[[j]])*mod(vec1[[j]])))
+  beta1[j] <- acos((t(a1[[j]])%*%vec1[[j]])/(mod(a1[[j]])*mod(vec1[[j]])))
+}
+for(j in 1:31){
+  ifelse(a1[[j]]==c(0,1),eta1[j] <- 100*(pi-alpha1[j])/beta1[j],eta1[j] <- -100*(pi-alpha1[j])/beta1[j])
+}
+##信息制造-信息服务
+xin2 <- list();q2 <- list();A2 <- list();eigen2 <- list();q2_1 <- list()
+s2 <- c();lam2 <- c();vec2 <- list();uu2 <- list()
+for(j in 1:31){
+  xin2[[j]] <- matrix(c(X[[j]][20,20],X[[j]][20,32],X[[j]][32,20],X[[j]][32,32]),nrow = 2,byrow = TRUE) 
+  q2[[j]] <- c(q[[j]][20],q[[j]][32])     
+  q2_1[[j]] <- q2[[j]]/sum(q2[[j]])              #生产结构
+  A2[[j]] <- xin2[[j]]%*%solve(diag(q2[[j]]))                   
+  eigen2[[j]] <- eigen(A2[[j]])
+  uu2[[j]] <- t(solve(eigen2[[j]]$vectors))%*%(1-eigen2[[j]]$values)
+  lam2[j] <- eigen2[[j]]$values[1] 
+  vec2[[j]] <- eigen2[[j]]$vectors[,1]
+  s2[j] <- sum(f[[j]][c(20,32)])/sum(q2[[j]])  #最终产品率
+}
+a2 <- list();alpha2 <- c();beta2 <- c();eta2 <- c()
+for(j in 1:31)a2[[j]] <- c(0,0)
+for(j in 1:31){
+  ifelse(s2[j] >= 1-lam2[j],a2[[j]][which.max(uu2[[j]])] <- 1,a2[[j]][which.min(uu2[[j]])] <- 1) 
+  alpha2[j] <- acos((t(q2_1[[j]])%*%vec2[[j]])/(mod(q2_1[[j]])*mod(vec2[[j]])))
+  beta2[j] <- acos((t(a2[[j]])%*%vec2[[j]])/(mod(a2[[j]])*mod(vec2[[j]])))
+}
+for(j in 1:31){
+  ifelse(a2[[j]]==c(0,1),eta2[j] <- 100*alpha2[j]/beta2[j],eta2[j] <- -100*alpha2[j]/(pi-beta2[j]))
+}
+NAME1 <- c("北京","天津","河北","山西","内蒙古","辽宁","吉林","黑龙江",
+                   "上海","江苏","浙江","安徽","福建","江西","山东","河南","湖北",
+                   "湖南","广东","广西","海南","重庆","四川","贵州","云南","西藏",
+                   "陕西","甘肃","青海","宁夏","新疆")
+XTD <- data.frame(NAME1,"外部协调度"=-eta1,"内部协调度"=-eta2)
+XTDdt <- data.frame(NAME,"外部协调度"=-eta1,"内部协调度"=-eta2)
+
+ggplot(data = XTD,aes(y=外部协调度,x=内部协调度))+
+  geom_point(color="blue")+
+  geom_hline(yintercept = 0,color="red")+
+  geom_vline(xintercept = 0,color="red")+
+  labs(title="信息产业协调度",y="信息产业-非信息产业",x="信息制造-信息服务")+
+  geom_text(label=NAME1,family="STKaiti")+
+  theme(plot.title=element_text(hjust=0.5),
+        panel.background = element_blank(),
+        panel.grid =element_blank(),
+        text = element_text(family="STKaiti"))
+
+```
+
+
+## 经济效益分析
+```{r,echo=FALSE}
+E <- list();BE <- list()
+GDP <- list()
+for(j in 1:31){
+  E[[j]] <- y[[j]]/q[[j]]   #直接经济效益系数
+  BE[[j]] <- apply(L[[j]]%*% diag(E[[j]]),2,sum)       #后向完全经济效益
+}
+for(j in 1:31){
+  GDP[[j]] <- (y[[j]][20]+y[[j]][32])/2
+  E[[j]] <- (E[[j]][20]+E[[j]][32])/2
+  BE[[j]] <- (BE[[j]][20]+BE[[j]][32])/2
+}
+
+GDP <- do.call(rbind,GDP)
+BE <- do.call(rbind,BE)
+E <- do.call(rbind,E)
+XYdt <- data.frame(NAME,"经济效益" = BE/E)
+XYdt$"地区" <- as.factor(c("东","东","东","中","中","东","中","中",
+                   "东","东","东","中","东","中","东","中","中",
+                   "中","东","东","东","西","西","西","西","西",
+                   "西","西","西","西","西"))
+ggplot(XYdt,aes(x=地区,y=经济效益,fill=地区))+
+  geom_boxplot()+
+  labs(title="地区信息产业经济效益",x="地区",y="经济效益")+
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(family="STKaiti"))
+
+
+#效益热图
+china_data_1 <- join(china_data, XYdt, type="full")          #合并两个数据框
+pp3 <- ggplot(china_data_1,aes(long,lat))+
+  labs(title="信息产业经济效益")+
+  geom_polygon(aes(group=group,fill=经济效益 ),colour="grey60")+
+  scale_fill_gradient(name="效益值",low="white",high="red") +
+  coord_map("polyconic") +
+  coord_map(projection = "azequidistant")+
+  geom_text(aes(x = jd,y = wd,label = province), data =province_city,family="STKaiti",size=3)+
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = c(0.2,0.3),
+    plot.title = element_text(hjust = 0.5),
+    text=element_text(family="STKaiti")
+  )
+pp3
+
+```
+
+# 相似产业集群划分
+```{r,echo=FALSE}
+zb <- join(GLDdt[1:3],YFDdt)
+zb <- join(zb,XTDdt)
+zb <- join(zb,XYdt)
+
+zb.scaled <- scale(zb[2:9])
+row.names(zb.scaled) <- NAME1
+#判断聚类数
+wssplot <- function(data,nc=15,seed=1234){
+  wss <- (nrow(data)-1)*sum(apply(data,2,var))
+  for(i in 2:nc){
+    set.seed(seed)
+    wss[i] <- sum(kmeans(data,centers = i)$withinss)
+  }
+  plot(1:nc,wss,type = "b",xlab = "Number of Clusters",
+       ylab = "Within groups sum of squares")
+}
+wssplot(zb.scaled)
+#平均联动层次聚类
+fit.average <- hclust(dist(zb.scaled),method = "average")
+plot(fit.average,hang=-1,cex=.8,main = "Average Linkage Clustering",family='STKaiti')
+clusters <- cutree(fit.average,k=6)
+plot(fit.average,hang=-1,cex=.8,main = "Average Linkage Clustering",family='STKaiti')
+
+
+```
+```{r,echo=FALSE}
+#PAM聚类
+set.seed(1234)
+fit.pam <- pam(zb.scaled,k=6,stand = TRUE)
+fit.pam$medoids  #中心点
+clusplot(fit.pam,main = "Bivariate Cluster Plot")
+pamresults <- fit.pam$clustering
+names(pamresults) <- NULL
+pamGroups <- data.frame(NAME,"cluster"=fit.pam$clustering)
+
+
+```
+
+```{r,echo=FALSE}
+#分类图
+china_data_2 <- join(china_data, pamGroups, type="full")          #合并两个数据框
+china_data_2$cluster <- as.factor(china_data_2$cluster)
+cols <- c(
+  rgb(red = 67, green = 80, blue = 180, max = 255),
+  rgb(red = 131, green = 175, blue = 155, max = 255),
+          rgb(red = 200, green = 200, blue = 169, max = 255),
+          rgb(red = 249, green = 205, blue = 173, max = 255),
+          rgb(red = 252, green = 157, blue = 154, max = 255),
+          rgb(red = 254, green = 67, blue = 101, max = 255)
+          )
+pp4 <- ggplot(china_data_2,aes(long,lat))+
+  labs(title="信息产业相似集群")+
+  geom_polygon(aes(group=group,fill=cluster ))+
+    scale_fill_manual(name = "",values = cols) + 
+  coord_map("polyconic") +
+  coord_map(projection = "azequidistant")+
+  geom_text(aes(x = jd,y = wd,label = ""), data =province_city,family="STKaiti",size=3)+
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = c(0.2,0.3),
+    plot.title = element_text(hjust = 0.5),
+    text=element_text(family="STKaiti")
+  )
+pp4
+```
+
+# 经济效益的影响因素探究
+```{r,echo=FALSE}
+zb1 <- as.data.frame(zb.scaled)
+zb1
+fit <- lm(经济效益~.,data=zb[-1])
+summary(fit)
+
+p1 <- ggplot(zb[-1,],aes(x=信息服务业,y=经济效益))+
+  geom_point()+
+  theme(
+    text=element_text(family="STKaiti"))
+p2 <- ggplot(zb,aes(x=消费诱发度,y=经济效益))+
+  geom_point()+
+  theme(text=element_text(family="STKaiti"))
+p3 <- ggplot(zb,aes(x=投资诱发度,y=经济效益))+
+  geom_point()+
+  theme(text=element_text(family="STKaiti"))
+p4 <- ggplot(zb[-c(19,22),],aes(x=外部协调度,y=经济效益))+
+  geom_point()+
+  theme(text=element_text(family="STKaiti"))
+
+grid.arrange(p1,p2,p4,nrow=1)
+
+
+library(mgcv)
+b <- gam(经济效益~信息制造业+信息服务业+s(消费诱发度,投资诱发度,出口诱发度,k=20)+s(内部协调度,k=9)+外部协调度,family = gaussian(),data=zb)
+summary(b)
+b1 <- gam(经济效益~s(内部协调度,k=4),family = gaussian(),data=zb)
+b2 <- gam(经济效益~s(外部协调度),family = gaussian(),data=zb)
+b3 <- gam(经济效益~s(信息服务业),family = gaussian(),data=zb)
+b4 <- gam(经济效益~s(信息制造业),family = gaussian(link = log),data=zb)
+plot(b1)
+AIC(b)
+plot(b1,all.terms=T,family='STKaiti')
+
+```
+
+
+# 小结
+

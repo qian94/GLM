@@ -1,0 +1,147 @@
+---
+title: "GLM HW05"
+author: "宋倩 统计系 15420161152176"
+date: "2017/11/27"
+output:
+  word_document: default
+  html_document: default
+---
+
+##Gaussi-Seidel Algorithm with Newton Upadate:
+```{r}
+mod <- function(z){                                    ##向量求模函数
+  a <- vector(mode="numeric",length = length(z))
+  for(i in seq_along(z)) a[i] <- z[i]^2
+  sqrt(sum(a))
+}
+GS <- function(x,Y){                                   ##Gaussi-Swidel函数
+  X <- cbind(rep(1,200),x)
+  p <- ncol(x)
+  beta <- rep(0,p+1)
+  epsi <- 1e-6
+   repeat{
+    betaOld <- beta
+    P <- as.vector(exp(X%*%beta)/(1+exp(X%*%beta)))
+    fder <- t(X)%*%(Y-P)                               ##一阶导
+    sder <- -t(X^2)%*%(P*(1-P))                        ##二阶导
+    j=0
+    while(j <= p){                                     ##更新beta
+      beta[j+1] <- beta[j+1]-(1/sder[j+1])*fder[j+1]
+      P <- as.vector(exp(X%*%beta)/(1+exp(X%*%beta)))
+      fder <- t(X)%*%(Y-P)
+      sder <- -t(X^2)%*%(P*(1-P))
+      j=j+1
+    }
+    dif <- beta-betaOld
+    if(mod(dif)/mod(betaOld) < epsi)break              ##迭代，直到满足此条件
+  }
+  return(beta)
+}
+
+```
+##Algorithm for SCAD Penalized Likelihood Estimation
+```{r}
+MLE <- function(x,Y){                        ##用Newton方法求logisti回归的极大似然估计函数
+  X <- cbind(rep(1,200),x)                   ##需将x补上一列单位向量
+  p <- ncol(x)
+  beta<- rep(0,p+1)
+  P <- as.vector(exp(X%*%beta)/(1+exp(X%*%beta)))
+  fder <- t(X)%*%(Y-P)
+  W <- diag(P*(1-P))
+  sder <- -t(X)%*%W%*%X
+  betaMLE <- beta-solve(sder)%*%fder
+  dif <- betaMLE-beta
+  while(mod(dif)/mod(beta)>1e-6){
+    beta <- betaMLE
+    P <- as.vector(exp(X%*%beta)/(1+exp(X%*%beta)))
+    fder <- t(X)%*%(Y-P)
+    W <- diag(P*(1-P))
+    sder <- -t(X)%*%W%*%X
+    betaMLE <- beta-solve(sder)%*%fder
+    dif <- betaMLE-beta
+  }
+  return(betaMLE)
+}
+lambda=2;a=3.7                                 
+sgn1 <- function(x) ifelse(x<=lambda,1,0)       ##SCAD惩罚项所需的三个指示函数
+sgn2 <- function(x)ifelse(x>=lambda,1,0)
+sgn3 <- function(x)ifelse(x>0,x,0)
+
+SCAD <- function(x,Y){                          ##SCAD算法实现
+  X <- cbind(rep(1,200),x)
+  p <- ncol(x)  
+  beta0 <- MLE(x,Y)                             ##初始值为MLE
+  pen <- vector(mode="numeric",length = p+1)    ##惩罚项
+  for(i in 1:p+1){
+    m <- sgn1(abs(beta0[i]))
+    n <- sgn2(abs(beta0[i]))
+    q <- sgn3(a*lambda-abs(beta0[i]))/((a-1)*lambda)
+    pen[i] <- lambda*(m+n*q)  
+    }
+  beta <- beta0
+  epsi=1e-6
+  repeat{                                       ##迭代
+    betaOld <- beta
+    P <- as.vector(exp(X%*%beta)/(1+exp(X%*%beta)))
+    fder <- t(X)%*%(Y-P)-(pen/abs(beta0))*beta  ##一阶导
+    sder <- -t(X^2)%*%(P*(1-P))-pen/abs(beta0)  ##二阶导
+    j = 0
+    while(j <= p){                              ##更新beta
+      if(beta[j+1]==0){
+        j=j+1
+      }else{
+        beta[j+1] <- beta[j+1]-(1/sder[j+1])*fder[j+1]
+        if(beta[j+1]< epsi){
+        beta[j+1] <- 0
+        P <- exp(X%*%beta)/(1+exp(X%*%beta))
+        fder <- t(X)%*%(Y-P)-(pen/abs(beta0))*beta
+        sder <- -t(X^2)%*%(P*(1-P))-pen/abs(beta0)
+        j=j+1
+        }else
+          j=j+1
+      }
+    }
+    dif <- beta-betaOld
+    if(mod(dif)/mod(betaOld) < epsi)break
+  }
+  return(beta)
+}
+```
+##产生模拟数据：
+```{r}
+library(mvtnorm)
+sigma <- matrix(nrow = 10,ncol = 10)
+for(i in 1:10){
+  for(j in 1:10){
+    sigma[i,j]=0.5^abs(i-j)
+  }
+}
+set.seed(1234)
+x <- rmvnorm(n=200,sigma=sigma)
+alpha=3                                  ##题目中未指定alpha的值,这里取3
+b <- c(1,2,0,0,3,0,0,0,-2,0)
+P <- exp(alpha+x%*%b)/(1+exp(alpha+x%*%b))
+set.seed(1234)
+Y <- rbinom(200,1,P)
+```
+##与glm/ncvreg结果进行对比：
+```{r}
+library(ncvreg)
+
+GS <- GS(x,Y)                                                         ##Gaussi-Seidel估计结果
+
+SCAD <- as.vector(SCAD(x,Y))                                          ##SCAD惩罚估计结果
+
+fit1 <- glm(Y~x,family = binomial(),data = data.frame(x,Y))   
+glm <- fit1$coefficients                                              ##glm进行logist回归 
+
+fit2 <- ncvreg(x,Y,family = c("binomial"),penalty = c("SCAD"),lambda =2) ##lambda=2时所有系数都收缩为0 
+scad_cv<-cv.ncvreg(x,Y,family = c("binomial"),penalty='SCAD')         ##选取最优的lambda
+scad_cv$lambda.min                 
+mySCAD <- ncvreg(x,Y,family = c("binomial"),penalty='SCAD',lambda=scad_cv$lambda.min)
+ncv <- as.vector(mySCAD$beta)
+
+b <- cbind(GS,glm,SCAD,ncv)
+b
+```
+从四种方法的对比结果来看，Gaussi-Seidel算法的估计结果与glm回归函数得到的参数估计几乎相同，较为理想。SCAD惩罚算法和ncvreg函数都将x3,x4,x6,x8,x10变量收缩为0，而在变量x9上相差较大，其余变量的估值较为接近，在可接受的范围内。
